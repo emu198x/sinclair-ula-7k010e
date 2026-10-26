@@ -12,10 +12,10 @@
 //! - Contention phase 1 (pattern starts 1 T-state later in the line)
 //! - Contention starts at T-state 14_361 (vs 14_335 on the 48K)
 
-use common_sinclair_zx_spectrum::memory::MemoryBus;
-use common_sinclair_zx_spectrum::timing::{self, FrameTiming};
-use common_sinclair_zx_spectrum::ula::Ula;
-use common_sinclair_zx_spectrum::ula_engine::{self, DELAY_TABLE_48K, UlaEngine};
+use emu198x_bus_sinclair_zx_spectrum::MemoryBus;
+use emu198x_bus_sinclair_zx_spectrum::Ula;
+use emu198x_bus_sinclair_zx_spectrum::timing::{self, FrameTiming};
+use emu198x_sinclair_zx_spectrum_ula::{self as ula_engine, DELAY_TABLE_48K, UlaEngine};
 
 /// Sinclair 7K010E ULA — the 128K / +2 ZX Spectrum's custom chip.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -45,8 +45,8 @@ impl SinclairUla {
     /// Reinstall the 128K timing config after a snapshot restore.
     ///
     /// `UlaEngine::config` is `#[serde(skip)]` and falls back to the
-    /// 48K config on deserialise (see `common_sinclair_zx_spectrum::
-    /// ula_engine::default_config`). For the 128K class that's wrong:
+    /// 48K config on deserialise (see `emu198x_sinclair_zx_spectrum_ula::
+    /// default_config`). For the 128K class that's wrong:
     /// CPU divisor, line length, contention start, and the rest diverge.
     /// Call once after `restore`.
     pub fn reattach_config(&mut self) {

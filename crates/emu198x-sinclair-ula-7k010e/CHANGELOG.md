@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.1.0
+
+### Added
+
+- Implements the `Ula` trait from `emu198x-bus-sinclair-zx-spectrum` over the
+  engine in `emu198x-sinclair-zx-spectrum-ula`, where both moved from the
+  family's glue crate; the crate no longer depends on `common-sinclair-zx-spectrum`.
+- First release under the `emu198x-sinclair-ula-7k010e` name. Until now the crate was
+  `sinclair-ula-7k010e`, versioned with the Emu198x suite and unpublished; the entries below are from that name.
+
 ### Fixed
 
 - align the active-border contention table with HALT2INT128's complete early-128K profile
