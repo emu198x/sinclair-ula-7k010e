@@ -23,4 +23,4 @@ jobs:
     with:
       # Ratchet up as tests grow; never down. Corpus tests are ignored here
       # and run nightly, so this measures the unit and fixture-free tests.
-      coverage-floor: 61
+      coverage-floor: 89

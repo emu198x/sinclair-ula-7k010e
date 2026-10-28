@@ -335,4 +335,383 @@ mod tests {
             "no contention on the preceding border line"
         );
     }
+
+    /// Memory whose every byte is distinct enough to tell addresses apart:
+    /// each read returns the high byte of the address XOR the low byte.
+    struct PatternMemory {
+        contended: bool,
+    }
+
+    impl PatternMemory {
+        fn byte_at(addr: u16) -> u8 {
+            let [high, low] = addr.to_be_bytes();
+            high ^ low
+        }
+    }
+
+    impl MemoryBus for PatternMemory {
+        fn read(&self, addr: u16) -> u8 {
+            Self::byte_at(addr)
+        }
+
+        fn write(&mut self, _addr: u16, _value: u8) {}
+
+        fn is_contended(&self, _addr: u16) -> bool {
+            self.contended
+        }
+    }
+
+    const UNCONTENDED: PatternMemory = PatternMemory { contended: false };
+
+    fn framebuffer() -> Vec<u8> {
+        vec![0; timing::SCREEN_WIDTH * timing::SCREEN_HEIGHT]
+    }
+
+    /// One idle half-cycle: no strobes, an uncontended address.
+    fn idle_tick(ula: &mut SinclairUla, fb: &mut [u8]) {
+        ula.tick(&UNCONTENDED, 0x0000, false, false, false, fb);
+    }
+
+    /// Run scan line 248 from pixel 0 and return the pixel counts at which
+    /// the interrupt rose and fell.
+    fn interrupt_edges(ula: &mut SinclairUla) -> (u16, u16) {
+        let mut fb = framebuffer();
+        ula.engine.scan = 248;
+        ula.engine.pixel = 0;
+        let mut rose = None;
+        let mut fell = None;
+        while ula.engine.scan == 248 {
+            let pixel = ula.engine.pixel;
+            let before = ula.interrupt_active();
+            idle_tick(ula, &mut fb);
+            match (before, ula.interrupt_active()) {
+                (false, true) => rose = Some(pixel),
+                (true, false) => fell = Some(pixel),
+                _ => {}
+            }
+        }
+        (
+            rose.expect("the interrupt should rise on line 248"),
+            fell.expect("the interrupt should fall on line 248"),
+        )
+    }
+
+    /// Put the ULA inside the contended window at a delay-table phase that
+    /// withholds the clock, on a half-cycle where the gate can arm.
+    fn ready_to_contend(ula: &mut SinclairUla) {
+        ula.engine.scan = 0;
+        ula.engine.pixel = 3;
+        ula.engine.z80_clock_high = false;
+        ula.engine.z80_iorq_prev = false;
+    }
+
+    #[test]
+    fn default_is_the_same_as_new() {
+        let ula = SinclairUla::default();
+        assert_eq!(ula.border_color(), 7);
+        assert!(!ula.speaker());
+        assert!(ula.cpu_clock_active());
+        assert_eq!((ula.engine.scan, ula.engine.pixel), (0, 0));
+        assert_eq!(ula.frame_timing().tstates_per_frame, 70_908);
+    }
+
+    #[test]
+    fn speaker_follows_bit_4_of_the_last_port_fe_write() {
+        let mut ula = SinclairUla::new();
+        assert!(!ula.speaker(), "the speaker starts low");
+
+        ula.write_fe(0x10);
+        assert!(ula.speaker());
+        assert_eq!(ula.border_color(), 0, "bit 4 is not part of the border");
+
+        ula.write_fe(0x0F);
+        assert!(!ula.speaker(), "bits 0-3 leave the speaker low");
+        assert_eq!(ula.border_color(), 7);
+    }
+
+    #[test]
+    fn port_fe_bit_6_reads_back_the_speaker_bit() {
+        let mut ula = SinclairUla::new();
+        let no_keys = [0xFF; 8];
+
+        assert_eq!(ula.read_fe(0xFEFE, &no_keys), 0xBF, "speaker low: EAR low");
+        ula.write_fe(0x10);
+        assert_eq!(
+            ula.read_fe(0xFEFE, &no_keys),
+            0xFF,
+            "speaker high: EAR high"
+        );
+        ula.write_fe(0x08);
+        assert_eq!(
+            ula.read_fe(0xFEFE, &no_keys),
+            0xBF,
+            "the MIC bit alone does not lift EAR"
+        );
+    }
+
+    #[test]
+    fn port_fe_reads_only_the_half_rows_the_high_byte_selects() {
+        let ula = SinclairUla::new();
+        let mut keyboard = [0xFF; 8];
+        keyboard[0] = 0xFE; // half-row 0, key 0 down (active low)
+
+        assert_eq!(
+            ula.read_fe(0xFEFE, &keyboard),
+            0xBE,
+            "A8 low selects half-row 0"
+        );
+        assert_eq!(
+            ula.read_fe(0x7FFE, &keyboard),
+            0xBF,
+            "A15 low selects only half-row 7"
+        );
+        assert_eq!(
+            ula.read_fe(0x00FE, &keyboard),
+            0xBE,
+            "every half-row selected"
+        );
+    }
+
+    #[test]
+    fn end_frame_rewinds_the_raster_and_drives_flash_every_16_frames() {
+        let mut ula = SinclairUla::new();
+        ula.engine.scan = 200;
+        ula.engine.pixel = 100;
+        ula.end_frame();
+        assert_eq!((ula.engine.scan, ula.engine.pixel), (0, 0));
+
+        for _ in 1..16 {
+            ula.end_frame();
+        }
+        assert!(ula.engine.flash_active, "flash swaps after 16 frames");
+        for _ in 0..16 {
+            ula.end_frame();
+        }
+        assert!(!ula.engine.flash_active, "and swaps back after 16 more");
+    }
+
+    #[test]
+    fn a_frame_of_half_cycles_is_456_pixels_by_311_lines() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+
+        for _ in 0..456 {
+            idle_tick(&mut ula, &mut fb);
+        }
+        assert_eq!((ula.engine.scan, ula.engine.pixel), (1, 0));
+
+        // 70,908 T-states at two half-cycles each brings the raster home.
+        for _ in 456..2 * 70_908 {
+            idle_tick(&mut ula, &mut fb);
+        }
+        assert_eq!((ula.engine.scan, ula.engine.pixel), (0, 0));
+    }
+
+    #[test]
+    fn interrupt_is_a_36_t_state_pulse_on_line_248() {
+        let mut ula = SinclairUla::new();
+        let (rose, fell) = interrupt_edges(&mut ula);
+        assert_eq!((rose, fell), (5, 77));
+        assert_eq!(
+            (fell - rose) / 2,
+            ula.frame_timing().interrupt_length_tstates as u16
+        );
+        assert!(!ula.interrupt_active());
+    }
+
+    #[test]
+    fn the_plus2_config_moves_both_interrupt_edges_one_t_state_earlier() {
+        let mut ula = SinclairUla::new();
+        let toastrack = interrupt_edges(&mut ula);
+
+        ula.reattach_plus2_config();
+        let plus2 = interrupt_edges(&mut ula);
+        assert_eq!(plus2, (toastrack.0 - 2, toastrack.1 - 2));
+
+        // Raster geometry is unchanged: a line is still 456 pixels.
+        let mut fb = framebuffer();
+        ula.engine.scan = 10;
+        ula.engine.pixel = 0;
+        for _ in 0..456 {
+            idle_tick(&mut ula, &mut fb);
+        }
+        assert_eq!((ula.engine.scan, ula.engine.pixel), (11, 0));
+    }
+
+    #[test]
+    fn reattach_config_restores_the_128k_interrupt_after_the_plus2_config() {
+        let mut ula = SinclairUla::new();
+        ula.reattach_plus2_config();
+        ula.reattach_config();
+        assert_eq!(interrupt_edges(&mut ula), (5, 77));
+    }
+
+    #[test]
+    fn floating_bus_shows_each_screen_fetch_then_idles_high() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        let seen: Vec<u8> = (0..16)
+            .map(|_| {
+                idle_tick(&mut ula, &mut fb);
+                ula.floating_bus()
+            })
+            .collect();
+
+        let bitmap0 = PatternMemory::byte_at(0x4000);
+        let attr0 = PatternMemory::byte_at(0x5800);
+        let bitmap1 = PatternMemory::byte_at(0x4001);
+        let attr1 = PatternMemory::byte_at(0x5801);
+        assert_eq!(
+            seen,
+            [
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // before the fetches
+                bitmap0, bitmap0, attr0, attr0, bitmap1, bitmap1, attr1, attr1,
+            ]
+        );
+
+        // The bottom border fetches nothing.
+        ula.engine.scan = 192;
+        ula.engine.pixel = 8;
+        idle_tick(&mut ula, &mut fb);
+        assert_eq!(ula.floating_bus(), 0xFF);
+    }
+
+    #[test]
+    fn a_refresh_in_screen_ram_replaces_the_bitmap_fetch_address() {
+        fn fetch_at_pixel_8(ula: &mut SinclairUla, rfsh_addr: u16) -> u8 {
+            let mut fb = framebuffer();
+            ula.engine.scan = 0;
+            ula.engine.pixel = 8;
+            ula.tick(&UNCONTENDED, rfsh_addr, false, false, true, &mut fb);
+            ula.floating_bus()
+        }
+
+        let mut ula = SinclairUla::new();
+        assert_eq!(
+            fetch_at_pixel_8(&mut ula, 0x4123),
+            PatternMemory::byte_at(0x4123),
+            "I in $40-$7F: snow"
+        );
+        assert_eq!(
+            fetch_at_pixel_8(&mut ula, 0x0123),
+            PatternMemory::byte_at(0x4000),
+            "I outside screen RAM: a clean fetch"
+        );
+    }
+
+    #[test]
+    fn an_even_port_is_contended_even_at_an_uncontended_address() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ready_to_contend(&mut ula);
+        ula.tick(&UNCONTENDED, 0x00FE, false, true, false, &mut fb);
+        assert!(!ula.cpu_clock_active(), "the ULA answers even ports");
+    }
+
+    #[test]
+    fn an_even_port_lookup_is_not_repeated_while_iorq_stays_asserted() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ready_to_contend(&mut ula);
+        ula.engine.z80_iorq_prev = true;
+        ula.tick(&UNCONTENDED, 0x00FE, false, true, false, &mut fb);
+        assert!(ula.cpu_clock_active());
+    }
+
+    #[test]
+    fn an_odd_port_is_contended_only_at_a_contended_address() {
+        let mut fb = framebuffer();
+
+        let mut ula = SinclairUla::new();
+        ready_to_contend(&mut ula);
+        ula.tick(&UNCONTENDED, 0x00FF, false, true, false, &mut fb);
+        assert!(ula.cpu_clock_active(), "odd port, uncontended page");
+
+        let mut ula = SinclairUla::new();
+        ready_to_contend(&mut ula);
+        ula.engine.z80_iorq_prev = true;
+        ula.tick(
+            &PatternMemory { contended: true },
+            0x40FF,
+            false,
+            true,
+            false,
+            &mut fb,
+        );
+        assert!(
+            !ula.cpu_clock_active(),
+            "odd port, contended page: every lookup stalls"
+        );
+    }
+
+    #[test]
+    fn an_asserted_mreq_is_not_contended() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ready_to_contend(&mut ula);
+        ula.tick(&ContendedMemory, 0x4000, true, false, false, &mut fb);
+        assert!(ula.cpu_clock_active());
+    }
+
+    #[test]
+    fn port_contention_stops_at_the_bottom_border() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ready_to_contend(&mut ula);
+        ula.engine.scan = 192;
+        ula.tick(&UNCONTENDED, 0x00FE, false, true, false, &mut fb);
+        assert!(ula.cpu_clock_active());
+    }
+
+    #[test]
+    fn a_contended_access_stalls_on_pixels_3_to_14_of_each_cycle() {
+        let mut fb = framebuffer();
+        let mut ula = SinclairUla::new();
+        let stalled: Vec<u16> = (0..32)
+            .filter(|&pixel| {
+                ula.engine.scan = 0;
+                ula.engine.pixel = pixel;
+                ula.engine.z80_clock_high = false;
+                ula.tick(&ContendedMemory, 0x4000, false, false, false, &mut fb);
+                !ula.cpu_clock_active()
+            })
+            .collect();
+        let expected: Vec<u16> = (3..15).chain(19..31).collect();
+        assert_eq!(stalled, expected, "pixels 15, 0, 1 and 2 are free");
+    }
+
+    #[test]
+    fn a_stall_holds_the_clock_phase_until_the_free_pixels() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ready_to_contend(&mut ula);
+
+        let mut stalls = 0;
+        loop {
+            ula.tick(&ContendedMemory, 0x4000, false, false, false, &mut fb);
+            if ula.cpu_clock_active() {
+                break;
+            }
+            stalls += 1;
+            assert!(
+                ula.engine.gate_arms_this_halfcycle(),
+                "a stalled CPU's clock phase does not advance"
+            );
+        }
+        assert_eq!(stalls, 12, "the stall runs from pixel 3 to pixel 14");
+        assert_eq!(ula.engine.pixel, 16, "released by the tick at pixel 15");
+    }
+
+    #[test]
+    fn a_border_write_reaches_the_framebuffer() {
+        let mut ula = SinclairUla::new();
+        let mut fb = framebuffer();
+        ula.write_fe(0x02);
+        while ula.engine.scan == 0 {
+            idle_tick(&mut ula, &mut fb);
+        }
+        // Display line 0 is framebuffer row 48; ULA pixel 280 is in the
+        // right border at framebuffer column 280 + 36.
+        assert_eq!(fb[48 * timing::SCREEN_WIDTH + 316], 2);
+    }
 }
