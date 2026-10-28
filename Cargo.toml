@@ -1,0 +1,35 @@
+# sinclair-ula-7k010e: The Sinclair 7K010E, the ZX Spectrum 128K and +2's ULA.
+#
+# Moved out of emu198x/emu198x with its history on 2026-10-28,
+# under knowledge/decisions/workspace-shape.md § Amendment there: one repository
+# per CPU and per chip, published, so each system family and sibling takes it
+# from crates.io.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "GPL-2.0-or-later"
+homepage = "https://emu198x.github.io/"
+repository = "https://github.com/emu198x/sinclair-ula-7k010e"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "deny"
+
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

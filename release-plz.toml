@@ -1,0 +1,29 @@
+# On each push to main, release-plz opens or updates a "chore: release" PR
+# (version bump and CHANGELOG from conventional-commit prefixes). Merging it
+# tags each changed crate and publishes it to crates.io over OIDC (Trusted
+# Publishing) in the same run, with no stored registry token.
+[workspace]
+publish = true
+git_release_enable = true
+git_tag_enable = true
+changelog_update = true
+# Only reader-facing changes earn a release. Release-process work uses `ci:` or
+# `chore(release):`; changelog filtering alone does not prevent a version bump.
+release_commits = "^(feat|fix|perf|revert)[(:]"
+# Package-prefixed tags, so a second crate here stays unambiguous.
+git_tag_name = "{{ package }}-v{{ version }}"
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+  { message = '^chore(\([^)]*\))?: release\b', skip = true },
+  { message = '^(feat|fix|perf|revert)\((ci|release)\)', skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^revert", group = "Reverted" },
+  { message = '^(chore|build)\(deps\)', group = "Dependencies" },
+  { message = "^(docs|test|chore|ci|build|refactor|style)", skip = true },
+  { message = "^Merge", skip = true },
+  { message = ".*", group = "Other" },
+]

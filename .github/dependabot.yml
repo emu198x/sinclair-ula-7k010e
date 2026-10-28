@@ -1,0 +1,25 @@
+# Dependabot version updates, the same as the other 198x Rust repos. Minor and
+# patch updates are grouped per ecosystem; majors open their own PRs.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"
