@@ -6,7 +6,7 @@ edition.workspace = true
 # published crate whose version communicates *its* changes to consumers, so it
 # bumps when it changes rather than on every Emu198x suite release. Started at
 # 0.1.0 when it took the emu198x- prefix to publish.
-version = "0.1.0"
+version = "0.2.0"
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
@@ -16,7 +16,7 @@ categories = ["emulators"]
 [dependencies]
 serde = { workspace = true }
 emu198x-bus-sinclair-zx-spectrum = "0.1.0"
-emu198x-sinclair-zx-spectrum-ula = "0.1.0"
+emu198x-sinclair-zx-spectrum-ula = "0.2.0"
 
 [lints]
 workspace = true

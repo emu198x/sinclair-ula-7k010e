@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.0
+
+### Fixed
+
+- Preserve pending video fetches, the border output latch and pipeline phase
+  through the shared ULA engine 0.2.0. The positional serialized layout changes;
+  callers must version their enclosing saves and reject older payloads before
+  decoding. Hardware stepping and rendering algorithms are unchanged.
+
 ## 0.1.0
 
 ### Added

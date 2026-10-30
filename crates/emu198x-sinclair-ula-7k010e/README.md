@@ -19,3 +19,7 @@ projects can use it on its own; it is versioned independently of the
 Emu198x suite and bumps only when it changes.
 
 Licensed GPL-2.0-or-later.
+
+## Save-state compatibility
+
+Version 0.2 preserves the video engine’s pending fetches, border output latch, VidEN and falling-edge phase/address in serialized state. Its positional binary layout differs from 0.1. Callers must version their enclosing save format and reject older payloads before decoding; missing pipeline state cannot be recovered exactly. The Rust stepping API and hardware algorithms are unchanged. The owner must still reattach its immutable timing configuration after restore.
