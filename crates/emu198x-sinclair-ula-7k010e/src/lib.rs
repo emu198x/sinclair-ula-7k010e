@@ -576,26 +576,40 @@ mod tests {
         assert_eq!(ula.floating_bus(), 0xFF);
     }
 
+    /// A refresh in `$4000..=$7FFF` that begins at fetch phase 3, just
+    /// before a fetch's row is latched, gives that fetch the refresh's row
+    /// (A0–A6) in its own column. The line's fetches start at pixel 8; the
+    /// one checked is the third column's, at pixel 24, meant to read
+    /// `$4002`, so the refresh begins at pixel 19.
     #[test]
-    fn a_refresh_in_screen_ram_replaces_the_bitmap_fetch_address() {
-        fn fetch_at_pixel_8(ula: &mut SinclairUla, rfsh_addr: u16) -> u8 {
+    fn a_refresh_beginning_before_a_fetch_in_screen_ram_snows_it() {
+        fn fetch_at_pixel_24(rfsh_addr: u16, begins: u16) -> u8 {
+            let mut ula = SinclairUla::new();
             let mut fb = framebuffer();
             ula.engine.scan = 0;
             ula.engine.pixel = 8;
-            ula.tick(&UNCONTENDED, rfsh_addr, false, false, true, &mut fb);
+            while ula.engine.pixel <= 24 {
+                let p = ula.engine.pixel;
+                let on = (begins..begins + 4).contains(&p);
+                ula.tick(&UNCONTENDED, rfsh_addr, false, false, on, &mut fb);
+            }
             ula.floating_bus()
         }
 
-        let mut ula = SinclairUla::new();
         assert_eq!(
-            fetch_at_pixel_8(&mut ula, 0x4123),
-            PatternMemory::byte_at(0x4123),
-            "I in $40-$7F: snow"
+            fetch_at_pixel_24(0x4123, 19),
+            PatternMemory::byte_at(0x4023),
+            "I in $40-$7F, R=$23: row $23, column unchanged"
         );
         assert_eq!(
-            fetch_at_pixel_8(&mut ula, 0x0123),
-            PatternMemory::byte_at(0x4000),
+            fetch_at_pixel_24(0x0123, 19),
+            PatternMemory::byte_at(0x4002),
             "I outside screen RAM: a clean fetch"
+        );
+        assert_eq!(
+            fetch_at_pixel_24(0x4123, 17),
+            PatternMemory::byte_at(0x4002),
+            "a refresh that began earlier doesn't snow this fetch"
         );
     }
 
