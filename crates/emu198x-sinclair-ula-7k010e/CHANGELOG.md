@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0
+
+### Fixed
+
+- Snow, through the shared ULA engine 0.3.0: a snowed fetch keeps its column and takes the refresh's row, and only the fetch pair a refresh lands on is hit, so snow falls in odd columns and duplicates into even ones as on a real machine. The engine's serialized state gains three fields; callers must version their enclosing saves and reject 0.2 payloads before decoding.
+
 ## 0.2.0
 
 ### Fixed

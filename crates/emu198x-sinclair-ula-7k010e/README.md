@@ -22,4 +22,6 @@ Licensed GPL-2.0-or-later.
 
 ## Save-state compatibility
 
+Version 0.3 adopts the shared ULA engine 0.3, whose serialized state adds the snow fields (`snow_mode`, `snow_row`, `snow_was_armed`), so its positional layout differs from 0.2. Callers must version their enclosing save format and reject older payloads before decoding.
+
 Version 0.2 preserves the video engine’s pending fetches, border output latch, VidEN and falling-edge phase/address in serialized state. Its positional binary layout differs from 0.1. Callers must version their enclosing save format and reject older payloads before decoding; missing pipeline state cannot be recovered exactly. The Rust stepping API and hardware algorithms are unchanged. The owner must still reattach its immutable timing configuration after restore.
